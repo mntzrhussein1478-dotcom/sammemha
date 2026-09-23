@@ -28,14 +28,13 @@ jobs:
           tar -xJf /tmp/sammemha.tar.xz -C /tmp/source
           test -f /tmp/source/sammemha/package.json
           test -f /tmp/source/sammemha/app/page.tsx
-          test -f /tmp/source/sammemha/.github/workflows/ci.yml
 
-      - name: Materialize clean project tree
+      - name: Materialize project without workflow mutation
         shell: bash
         run: |
           set -euo pipefail
-          rsync -a --delete --exclude='.git/' /tmp/source/sammemha/ ./
-          test ! -d .bootstrap
+          rsync -a --delete             --exclude='.git/'             --exclude='.github/'             --exclude='.bootstrap/'             /tmp/source/sammemha/ ./
+          rm -rf .bootstrap
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -48,7 +47,7 @@ jobs:
           npm audit --audit-level=high
           npm run typecheck
 
-      - name: Publish source for targeted fixes
+      - name: Publish source
         shell: bash
         run: |
           set -euo pipefail
