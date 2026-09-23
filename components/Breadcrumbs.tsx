@@ -1,0 +1,1 @@
+import Link from 'next/link';export default function Breadcrumbs({name}:{name:string}){return <nav className="breadcrumbs" aria-label="مسار الصفحة"><Link href="/">الرئيسية</Link><span>›</span><Link href="/tools">الأدوات</Link><span>›</span><span aria-current="page">{name}</span></nav>}

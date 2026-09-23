@@ -1,0 +1,1 @@
+'use client';export default function Error({reset}:{error:Error&{digest?:string};reset:()=>void}){return <div className="container page-head" style={{textAlign:'center',paddingBlock:'100px'}}><h1>صار خطأ غير متوقع</h1><p>لم نعرض تفاصيل تقنية حساسة. يمكنك المحاولة مرة أخرى.</p><button className="btn primary" onClick={reset}>إعادة المحاولة</button></div>}

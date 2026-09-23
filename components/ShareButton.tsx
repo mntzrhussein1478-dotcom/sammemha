@@ -1,0 +1,3 @@
+'use client';
+import {useState} from 'react';
+export default function ShareButton(){const[msg,setMsg]=useState('نسخ الرابط');async function copy(){try{await navigator.clipboard.writeText(location.href);setMsg('تم النسخ');setTimeout(()=>setMsg('نسخ الرابط'),1500)}catch{setMsg('تعذر النسخ');setTimeout(()=>setMsg('نسخ الرابط'),1800)}}async function share(){try{if(navigator.share)await navigator.share({title:document.title,url:location.href});else await copy()}catch{/* User cancelled native share sheet. */}}return <div className="share-group"><button className="btn ghost" onClick={share}>مشاركة</button><button className="btn ghost" onClick={copy}>{msg}</button></div>}

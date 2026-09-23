@@ -1,0 +1,1 @@
+export const siteConfig={name:'صمّمها',version:'1.0.0',defaultLocale:'ar',supportedLocales:['ar','en'] as const,maintenanceMode:false,canonicalDomain:process.env.NEXT_PUBLIC_SITE_URL||'https://sammemha.vercel.app'};
