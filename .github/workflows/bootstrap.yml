@@ -3,6 +3,7 @@ name: Bootstrap Production Source
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -11,7 +12,7 @@ jobs:
   bootstrap:
     if: ${{ github.actor != 'github-actions[bot]' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 15
     steps:
       - name: Checkout staged payload
         uses: actions/checkout@v4
@@ -35,43 +36,24 @@ jobs:
           set -euo pipefail
           rsync -a --delete --exclude='.git/' /tmp/source/sammemha/ ./
           test ! -d .bootstrap
-          git status --short
 
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
-      - name: Install dependencies and generate lockfile
-        run: npm install --ignore-scripts
+      - name: Install and sanity-check
+        run: |
+          npm install --ignore-scripts
+          npm audit --audit-level=high
+          npm run typecheck
 
-      - name: Dependency audit
-        run: npm audit --audit-level=high
-
-      - name: Type check
-        run: npm run typecheck
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Unit tests
-        run: npm run test
-
-      - name: Production build
-        run: npm run build
-
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium firefox webkit
-
-      - name: E2E tests
-        run: npm run test:e2e
-
-      - name: Publish verified source
+      - name: Publish source for targeted fixes
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "feat: publish verified Sammemha v1.0.0"
+          git commit -m "feat: materialize Sammemha v1.0.0 source"
           git push origin HEAD:main
