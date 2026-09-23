@@ -15,7 +15,6 @@ const csp=[
   "form-action 'self'",
   "frame-ancestors 'none'",
   "manifest-src 'self'",
-  "upgrade-insecure-requests"
 ].join('; ');
 const headers=[
   {key:'Content-Security-Policy',value:csp},
@@ -27,5 +26,5 @@ const headers=[
   {key:'Cross-Origin-Resource-Policy',value:'same-origin'},
   {key:'Strict-Transport-Security',value:'max-age=31536000; includeSubDomains'}
 ];
-const nextConfig:NextConfig={reactStrictMode:true,poweredByHeader:false,output:'standalone',async headers(){return[{source:'/(.*)',headers}]}};
+const nextConfig:NextConfig={reactStrictMode:true,poweredByHeader:false,async headers(){return[{source:'/(.*)',headers}]}};
 export default nextConfig;
