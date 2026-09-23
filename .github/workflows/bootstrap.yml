@@ -16,7 +16,7 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -48,6 +48,40 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium firefox webkit
 
-      - name: E2E tests
+      - name: E2E tests against local production build
         timeout-minutes: 10
         run: npm run test:e2e
+
+      - name: Wait for public production URL
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          for attempt in {1..30}; do
+            if curl --fail --silent --show-error https://sammemha.vercel.app/ >/dev/null; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Production URL did not become reachable in time"
+          exit 1
+
+      - name: E2E tests against deployed production
+        if: github.event_name == 'push'
+        timeout-minutes: 12
+        env:
+          PLAYWRIGHT_BASE_URL: https://sammemha.vercel.app
+        run: npm run test:e2e
+
+      - name: Lighthouse production audit
+        if: github.event_name == 'push'
+        timeout-minutes: 8
+        shell: bash
+        run: |
+          npx -y lighthouse@12.8.2 https://sammemha.vercel.app             --quiet             --chrome-flags="--headless --no-sandbox --disable-gpu"             --only-categories=performance,accessibility,best-practices,seo             --output=json             --output-path=./lighthouse.json
+          node - <<'NODE'
+          const report=require('./lighthouse.json');
+          for(const key of ['performance','accessibility','best-practices','seo']){
+            const score=Math.round((report.categories[key]?.score??0)*100);
+            console.log(`LIGHTHOUSE ${key}: ${score}`);
+          }
+          NODE
