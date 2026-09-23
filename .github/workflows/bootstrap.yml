@@ -1,0 +1,78 @@
+name: Bootstrap Production Source
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout staged payload
+        uses: actions/checkout@v4
+
+      - name: Reconstruct and verify source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .bootstrap/payload-*.b64 > /tmp/sammemha.tar.xz.b64
+          base64 --decode /tmp/sammemha.tar.xz.b64 > /tmp/sammemha.tar.xz
+          echo "a1f5ee341e4023ee447fa16d339ba666b1c61589525faaddafc3d20af631c2e3  /tmp/sammemha.tar.xz" | sha256sum --check --strict
+          mkdir -p /tmp/source
+          tar -xJf /tmp/sammemha.tar.xz -C /tmp/source
+          test -f /tmp/source/sammemha/package.json
+          test -f /tmp/source/sammemha/app/page.tsx
+          test -f /tmp/source/sammemha/.github/workflows/ci.yml
+
+      - name: Materialize clean project tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          rsync -a --delete --exclude='.git/' /tmp/source/sammemha/ ./
+          test ! -d .bootstrap
+          git status --short
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies and generate lockfile
+        run: npm install --ignore-scripts
+
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: Production build
+        run: npm run build
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium firefox webkit
+
+      - name: E2E tests
+        run: npm run test:e2e
+
+      - name: Publish verified source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: publish verified Sammemha v1.0.0"
+          git push origin HEAD:main
