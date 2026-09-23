@@ -1,233 +1,28 @@
-name: Repair and Verify Source
+name: CI
 
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   verify:
-    if: ${{ github.actor != 'github-actions[bot]' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Apply lint-safe React fixes
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          Path('components/Onboarding.tsx').write_text("""'use client';
-          import {useEffect,useRef,useState} from 'react';
-
-          export default function Onboarding(){
-            const [show,setShow]=useState(false);
-            const [step,setStep]=useState(0);
-            const primary=useRef<HTMLButtonElement>(null);
-
-            useEffect(()=>{
-              const frame=requestAnimationFrame(()=>{
-                try{setShow(!localStorage.getItem('sammemha:onboarded'))}
-                catch{setShow(true)}
-              });
-              return()=>cancelAnimationFrame(frame);
-            },[]);
-
-            useEffect(()=>{
-              if(!show)return;
-              primary.current?.focus();
-              function key(e:KeyboardEvent){if(e.key==='Escape')done()}
-              document.addEventListener('keydown',key);
-              return()=>document.removeEventListener('keydown',key);
-            },[show,step]);
-
-            if(!show)return null;
-            const items=[
-              ['اختر أداة','ابدأ من الأداة والقالب المناسبين بدون إنشاء حساب.'],
-              ['عدّل وشاهد','كل تغيير يظهر مباشرة، ومسودتك تُحفظ محلياً على جهازك.'],
-              ['نزّل تصميمك','صدّر PNG عالي الدقة أو PDF للطباعة مع Safe Area وBleed عند الحاجة.'],
-            ];
-            function done(){try{localStorage.setItem('sammemha:onboarded','1')}catch{}setShow(false)}
-
-            return <div className="modal-backdrop" role="presentation"><div className="modal" role="dialog" aria-modal="true" aria-labelledby="onboarding-title" aria-describedby="onboarding-description"><span className="eyebrow">{step+1} / 3</span><h2 id="onboarding-title">{items[step][0]}</h2><p id="onboarding-description">{items[step][1]}</p><div className="modal-actions"><button className="btn ghost" onClick={done}>تخطي</button>{step<2?<button ref={primary} className="btn primary" onClick={()=>setStep(s=>s+1)}>التالي</button>:<button ref={primary} className="btn primary" onClick={done}>ابدأ الآن</button>}</div></div></div>;
-          }
-          """,encoding='utf-8')
-
-          Path('components/RecentDesigns.tsx').write_text("""'use client';
-          import Link from 'next/link';
-          import {useEffect,useState} from 'react';
-          import {toolsBySlug} from '@/data/tools';
-          import {clearRecentDesigns,getRecentDesigns} from '@/lib/storage';
-          import type {RecentDesign} from '@/lib/types';
-
-          function formatDate(value:number){return new Intl.DateTimeFormat('ar-IQ',{dateStyle:'medium',timeStyle:'short'}).format(value)}
-
-          export default function RecentDesigns(){
-            const [items,setItems]=useState<RecentDesign[]>([]);
-            useEffect(()=>{
-              const frame=requestAnimationFrame(()=>setItems(getRecentDesigns()));
-              return()=>cancelAnimationFrame(frame);
-            },[]);
-            if(!items.length)return null;
-            return <section className="recent-section" aria-labelledby="recent-title"><div className="section-head compact"><div><span className="eyebrow">محفوظ محلياً</span><h2 id="recent-title">آخر التصاميم</h2></div><button className="mini" onClick={()=>{clearRecentDesigns();setItems([])}}>مسح القائمة</button></div><div className="recent-grid">{items.map(item=>{const tool=toolsBySlug[item.slug];const template=tool?.templates.find(t=>t.id===item.templateId);if(!tool)return null;return <Link href={`/tools/${item.slug}`} className="recent-card" key={`${item.slug}:${item.templateId}`}><strong>{tool.name}</strong><span>{template?.name||'القالب الافتراضي'}</span><small>{formatDate(item.updatedAt)}</small></Link>})}</div></section>;
-          }
-          """,encoding='utf-8')
-
-          Path('components/ThemeToggle.tsx').write_text("""'use client';
-          import {useEffect,useState} from 'react';
-
-          type Theme='light'|'dark'|'system';
-          function readTheme():Theme{try{const raw=localStorage.getItem('sammemha:theme');if(raw==='light'||raw==='dark'||raw==='system')return raw}catch{}return 'system'}
-          function resolved(theme:Theme){return theme==='dark'||(theme==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light'}
-
-          export default function ThemeToggle(){
-            const [theme,setTheme]=useState<Theme>('system');
-            useEffect(()=>{
-              const media=window.matchMedia('(prefers-color-scheme: dark)');
-              const sync=()=>{const saved=readTheme();setTheme(saved);document.documentElement.dataset.theme=resolved(saved)};
-              const frame=requestAnimationFrame(sync);
-              const onChange=()=>{if(readTheme()==='system')document.documentElement.dataset.theme=resolved('system')};
-              media.addEventListener('change',onChange);
-              return()=>{cancelAnimationFrame(frame);media.removeEventListener('change',onChange)};
-            },[]);
-            function apply(next:Theme){setTheme(next);document.documentElement.dataset.theme=resolved(next);try{localStorage.setItem('sammemha:theme',next)}catch{}}
-            function cycle(){apply(theme==='system'?'light':theme==='light'?'dark':'system')}
-            const label=theme==='system'?'النظام':theme==='light'?'فاتح':'داكن';
-            return <button className="icon-btn" onClick={cycle} aria-label="تغيير المظهر" title={`المظهر: ${label}`}>{theme==='dark'?'☾':theme==='light'?'☀':'◐'}</button>;
-          }
-          """,encoding='utf-8')
-
-          editor=Path('features/editor/ToolEditor.tsx')
-          s=editor.read_text(encoding='utf-8')
-          replacements=[
-            ("  useEffect(()=>setFav(isTemplateFavorite(tool.slug,style.templateId)),[tool.slug,style.templateId]);",
-             "  useEffect(()=>{const frame=requestAnimationFrame(()=>setFav(isTemplateFavorite(tool.slug,style.templateId)));return()=>cancelAnimationFrame(frame)},[tool.slug,style.templateId]);"),
-            ("  useEffect(()=>{let cancelled=false;const entries=Object.entries(imageUrls);if(!entries.length){setImages({});return}const next:Record<string,HTMLImageElement|null>={};let pending=entries.length;for(const[key,url]of entries){if(!url){next[key]=null;if(--pending===0&&!cancelled)setImages(next);continue}const image=new Image();image.onload=()=>{next[key]=image;if(--pending===0&&!cancelled)setImages(next)};image.onerror=()=>{next[key]=null;if(--pending===0&&!cancelled)setImages(next)};image.src=url}return()=>{cancelled=true}},[imageUrls]);",
-             "  useEffect(()=>{let cancelled=false;const entries=Object.entries(imageUrls);if(!entries.length){const frame=requestAnimationFrame(()=>{if(!cancelled)setImages({})});return()=>{cancelled=true;cancelAnimationFrame(frame)}}const next:Record<string,HTMLImageElement|null>={};let pending=entries.length;for(const[key,url]of entries){if(!url){next[key]=null;if(--pending===0)queueMicrotask(()=>{if(!cancelled)setImages(next)});continue}const image=new Image();image.onload=()=>{next[key]=image;if(--pending===0&&!cancelled)setImages(next)};image.onerror=()=>{next[key]=null;if(--pending===0&&!cancelled)setImages(next)};image.src=url}return()=>{cancelled=true}},[imageUrls]);"),
-            ("event.shiftKey?redoIt():undo()","if(event.shiftKey)redoIt();else undo()"),
-          ]
-          for old,new in replacements:
-            if old not in s:
-              raise SystemExit(f'Missing ToolEditor patch: {old[:70]}')
-            s=s.replace(old,new)
-          editor.write_text(s,encoding='utf-8')
-
-          draw=Path('features/editor/draw.ts')
-          s=draw.read_text(encoding='utf-8')
-          old="radius?c.roundRect(x,y,w,h,radius):c.rect(x,y,w,h);"
-          if old not in s: raise SystemExit('Missing draw patch')
-          draw.write_text(s.replace(old,"if(radius)c.roundRect(x,y,w,h,radius);else c.rect(x,y,w,h);"),encoding='utf-8')
-
-          storage=Path('lib/storage.ts')
-          s=storage.read_text(encoding='utf-8')
-          old="cur.has(id)?cur.delete(id):cur.add(id);"
-          if old not in s: raise SystemExit('Missing storage patch')
-          storage.write_text(s.replace(old,"if(cur.has(id))cur.delete(id);else cur.add(id);"),encoding='utf-8')
-
-          Path('tests/e2e/core.spec.ts').write_text("""import {test,expect} from '@playwright/test';
-
-          test.beforeEach(async({page})=>{
-            await page.addInitScript(()=>localStorage.setItem('sammemha:onboarded','1'));
-          });
-
-          test('homepage, navigation and tools render without console errors or horizontal overflow',async({page})=>{
-            const consoleErrors:string[]=[];
-            page.on('console',message=>{if(message.type()==='error')consoleErrors.push(message.text())});
-            await page.goto('/');
-            await expect(page.getByRole('heading',{name:/صمّمها بنفسك/})).toBeVisible();
-            await page.getByRole('link',{name:'استعرض الأدوات'}).click();
-            await expect(page).toHaveURL(/\\/tools$/);
-            await expect(page.getByRole('heading',{name:'أدوات التصميم'})).toBeVisible();
-            const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>document.documentElement.clientWidth+1);
-            expect(overflow).toBe(false);
-            expect(consoleErrors).toEqual([]);
-          });
-
-          test('cover workflow updates and downloads PNG and PDF',async({page},testInfo)=>{
-            test.skip(testInfo.project.name!=='chromium','Heavy export is validated once on Chromium; cross-browser smoke tests run in every project.');
-            await page.goto('/tools/notebook-cover');
-            await expect(page.getByRole('heading',{name:'غلاف دفتر مدرسي'})).toBeVisible();
-            const input=page.getByLabel('اسم الطالب');
-            await input.fill('اختبار منتظر');
-            await expect(input).toHaveValue('اختبار منتظر');
-            const pngPromise=page.waitForEvent('download');
-            await page.getByRole('button',{name:'تنزيل PNG'}).click();
-            const png=await pngPromise;
-            expect(png.suggestedFilename()).toMatch(/notebook-cover-.*\\.png$/);
-            const pdfPromise=page.waitForEvent('download');
-            await page.getByRole('button',{name:'تنزيل PDF'}).click();
-            const pdf=await pdfPromise;
-            expect(pdf.suggestedFilename()).toMatch(/notebook-cover-.*\\.pdf$/);
-          });
-
-          test('QR tool creates a downloadable code',async({page},testInfo)=>{
-            test.skip(testInfo.project.name!=='chromium','Heavy export is validated once on Chromium.');
-            await page.goto('/tools/qr');
-            await page.getByLabel('الرابط').fill('https://example.org/test');
-            await expect(page.locator('canvas').first()).toBeVisible();
-            const downloadPromise=page.waitForEvent('download');
-            await page.getByRole('button',{name:'تنزيل PNG'}).click();
-            const download=await downloadPromise;
-            expect(download.suggestedFilename()).toMatch(/qr-.*\\.png$/);
-          });
-
-          test('theme cycles and persists',async({page})=>{
-            await page.goto('/');
-            const button=page.getByRole('button',{name:'تغيير المظهر'});
-            await button.click();
-            await expect(page.locator('html')).toHaveAttribute('data-theme',/light|dark/);
-            await page.reload();
-            await expect(page.locator('html')).toHaveAttribute('data-theme',/light|dark/);
-          });
-
-          test('direct refresh, sitemap, robots and 404 behave correctly',async({page,request})=>{
-            await page.goto('/tools/certificate');
-            await page.reload();
-            await expect(page.getByRole('heading',{name:'شهادة تقدير'})).toBeVisible();
-            expect((await request.get('/sitemap.xml')).status()).toBe(200);
-            expect((await request.get('/robots.txt')).status()).toBe(200);
-            const response=await page.goto('/does-not-exist');
-            expect(response?.status()).toBe(404);
-            await expect(page.getByText('هذه الصفحة غير موجودة')).toBeVisible();
-          });
-          """,encoding='utf-8')
-
-          Path('playwright.config.ts').write_text("""import {defineConfig,devices} from '@playwright/test';
-
-          export default defineConfig({
-            testDir:'./tests/e2e',
-            timeout:45_000,
-            expect:{timeout:8_000},
-            fullyParallel:true,
-            retries:process.env.CI?1:0,
-            workers:process.env.CI?2:undefined,
-            use:{
-              baseURL:process.env.PLAYWRIGHT_BASE_URL||'http://127.0.0.1:3000',
-              trace:'retain-on-failure',
-              screenshot:'only-on-failure'
-            },
-            webServer:process.env.PLAYWRIGHT_BASE_URL?undefined:{
-              command:'npm run start -- --hostname 127.0.0.1',
-              url:'http://127.0.0.1:3000',
-              reuseExistingServer:!process.env.CI,
-              timeout:120_000
-            },
-            projects:[
-              {name:'chromium',use:{...devices['Desktop Chrome']}},
-              {name:'firefox',use:{...devices['Desktop Firefox']}},
-              {name:'webkit',use:{...devices['Desktop Safari']}},
-              {name:'mobile-chrome',use:{...devices['Pixel 7']}}
-            ]
-          });
-          """,encoding='utf-8')
-          PY
-
-      - uses: actions/setup-node@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
@@ -256,13 +51,3 @@ jobs:
       - name: E2E tests
         timeout-minutes: 10
         run: npm run test:e2e
-
-      - name: Commit verified fixes
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add components/Onboarding.tsx components/RecentDesigns.tsx components/ThemeToggle.tsx features/editor/ToolEditor.tsx features/editor/draw.ts lib/storage.ts tests/e2e/core.spec.ts playwright.config.ts
-          git commit -m "fix: satisfy production lint and React effect rules"
-          git push origin HEAD:main
