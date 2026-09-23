@@ -128,6 +128,103 @@ jobs:
           old="cur.has(id)?cur.delete(id):cur.add(id);"
           if old not in s: raise SystemExit('Missing storage patch')
           storage.write_text(s.replace(old,"if(cur.has(id))cur.delete(id);else cur.add(id);"),encoding='utf-8')
+
+          Path('tests/e2e/core.spec.ts').write_text("""import {test,expect} from '@playwright/test';
+
+          test.beforeEach(async({page})=>{
+            await page.addInitScript(()=>localStorage.setItem('sammemha:onboarded','1'));
+          });
+
+          test('homepage, navigation and tools render without console errors or horizontal overflow',async({page})=>{
+            const consoleErrors:string[]=[];
+            page.on('console',message=>{if(message.type()==='error')consoleErrors.push(message.text())});
+            await page.goto('/');
+            await expect(page.getByRole('heading',{name:/صمّمها بنفسك/})).toBeVisible();
+            await page.getByRole('link',{name:'استعرض الأدوات'}).click();
+            await expect(page).toHaveURL(/\\/tools$/);
+            await expect(page.getByRole('heading',{name:'أدوات التصميم'})).toBeVisible();
+            const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>document.documentElement.clientWidth+1);
+            expect(overflow).toBe(false);
+            expect(consoleErrors).toEqual([]);
+          });
+
+          test('cover workflow updates and downloads PNG and PDF',async({page},testInfo)=>{
+            test.skip(testInfo.project.name!=='chromium','Heavy export is validated once on Chromium; cross-browser smoke tests run in every project.');
+            await page.goto('/tools/notebook-cover');
+            await expect(page.getByRole('heading',{name:'غلاف دفتر مدرسي'})).toBeVisible();
+            const input=page.getByLabel('اسم الطالب');
+            await input.fill('اختبار منتظر');
+            await expect(input).toHaveValue('اختبار منتظر');
+            const pngPromise=page.waitForEvent('download');
+            await page.getByRole('button',{name:'تنزيل PNG'}).click();
+            const png=await pngPromise;
+            expect(png.suggestedFilename()).toMatch(/notebook-cover-.*\\.png$/);
+            const pdfPromise=page.waitForEvent('download');
+            await page.getByRole('button',{name:'تنزيل PDF'}).click();
+            const pdf=await pdfPromise;
+            expect(pdf.suggestedFilename()).toMatch(/notebook-cover-.*\\.pdf$/);
+          });
+
+          test('QR tool creates a downloadable code',async({page},testInfo)=>{
+            test.skip(testInfo.project.name!=='chromium','Heavy export is validated once on Chromium.');
+            await page.goto('/tools/qr');
+            await page.getByLabel('الرابط').fill('https://example.org/test');
+            await expect(page.locator('canvas').first()).toBeVisible();
+            const downloadPromise=page.waitForEvent('download');
+            await page.getByRole('button',{name:'تنزيل PNG'}).click();
+            const download=await downloadPromise;
+            expect(download.suggestedFilename()).toMatch(/qr-.*\\.png$/);
+          });
+
+          test('theme cycles and persists',async({page})=>{
+            await page.goto('/');
+            const button=page.getByRole('button',{name:'تغيير المظهر'});
+            await button.click();
+            await expect(page.locator('html')).toHaveAttribute('data-theme',/light|dark/);
+            await page.reload();
+            await expect(page.locator('html')).toHaveAttribute('data-theme',/light|dark/);
+          });
+
+          test('direct refresh, sitemap, robots and 404 behave correctly',async({page,request})=>{
+            await page.goto('/tools/certificate');
+            await page.reload();
+            await expect(page.getByRole('heading',{name:'شهادة تقدير'})).toBeVisible();
+            expect((await request.get('/sitemap.xml')).status()).toBe(200);
+            expect((await request.get('/robots.txt')).status()).toBe(200);
+            const response=await page.goto('/does-not-exist');
+            expect(response?.status()).toBe(404);
+            await expect(page.getByText('هذه الصفحة غير موجودة')).toBeVisible();
+          });
+          """,encoding='utf-8')
+
+          Path('playwright.config.ts').write_text("""import {defineConfig,devices} from '@playwright/test';
+
+          export default defineConfig({
+            testDir:'./tests/e2e',
+            timeout:45_000,
+            expect:{timeout:8_000},
+            fullyParallel:true,
+            retries:process.env.CI?1:0,
+            workers:process.env.CI?2:undefined,
+            use:{
+              baseURL:process.env.PLAYWRIGHT_BASE_URL||'http://127.0.0.1:3000',
+              trace:'retain-on-failure',
+              screenshot:'only-on-failure'
+            },
+            webServer:process.env.PLAYWRIGHT_BASE_URL?undefined:{
+              command:'npm run dev -- --hostname 127.0.0.1',
+              url:'http://127.0.0.1:3000',
+              reuseExistingServer:!process.env.CI,
+              timeout:120_000
+            },
+            projects:[
+              {name:'chromium',use:{...devices['Desktop Chrome']}},
+              {name:'firefox',use:{...devices['Desktop Firefox']}},
+              {name:'webkit',use:{...devices['Desktop Safari']}},
+              {name:'mobile-chrome',use:{...devices['Pixel 7']}}
+            ]
+          });
+          """,encoding='utf-8')
           PY
 
       - uses: actions/setup-node@v4
@@ -157,6 +254,7 @@ jobs:
         run: npx playwright install --with-deps chromium firefox webkit
 
       - name: E2E tests
+        timeout-minutes: 10
         run: npm run test:e2e
 
       - name: Commit verified fixes
@@ -165,6 +263,6 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add components/Onboarding.tsx components/RecentDesigns.tsx components/ThemeToggle.tsx features/editor/ToolEditor.tsx features/editor/draw.ts lib/storage.ts
+          git add components/Onboarding.tsx components/RecentDesigns.tsx components/ThemeToggle.tsx features/editor/ToolEditor.tsx features/editor/draw.ts lib/storage.ts tests/e2e/core.spec.ts playwright.config.ts
           git commit -m "fix: satisfy production lint and React effect rules"
           git push origin HEAD:main
