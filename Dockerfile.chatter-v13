@@ -1,0 +1,12 @@
+FROM python:3.13-slim
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+WORKDIR /tmp/build
+COPY deploy/v13/runtime.part*.b64 /tmp/build/
+RUN cat /tmp/build/runtime.part*.b64 | base64 -d > /tmp/runtime.tar.xz \
+ && mkdir -p /app \
+ && tar -xJf /tmp/runtime.tar.xz -C /app \
+ && pip install --no-cache-dir -r /app/iraqiachat-fullstack/requirements.txt \
+ && rm -rf /tmp/build /tmp/runtime.tar.xz
+WORKDIR /app/iraqiachat-fullstack
+EXPOSE 8080
+CMD ["python","server.py"]
